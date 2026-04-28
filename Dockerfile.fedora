@@ -1,0 +1,137 @@
+#
+# kas - setup tool for bitbake based projects
+#
+# Fedora variant of the kas build container. Parameterized by
+# FEDORA_TAG so a single Dockerfile produces images for multiple
+# Fedora releases.
+#
+# This file replaces the previous Dockerfile.fedora40 and
+# Dockerfile.fedora43 (which differed only in the FEDORA_TAG
+# default). It lives alongside the upstream Dockerfile (Ubuntu/Debian).
+#
+# Default build (Fedora 40, also tagged :latest):
+#   docker build -f Dockerfile.fedora --target kas-fedora \
+#       -t jetm/kas-build-env:5.3-f40 .
+#   docker tag jetm/kas-build-env:5.3-f40 jetm/kas-build-env:latest
+#
+# Comparison build (Fedora 43, used for debugging Yocto/bitbake
+# behavior across Python/glibc/perl/util-linux deltas; e.g.
+# confirming the bitbake parser-hang on Ubuntu Noble's CPython 3.12
+# is bpo-1596321 and does not reproduce on a newer Fedora Python):
+#   docker build -f Dockerfile.fedora --build-arg FEDORA_TAG=43 \
+#       --target kas-fedora -t jetm/kas-build-env:5.3-f43 .
+#
+
+ARG FEDORA_TAG=40
+
+#
+# kas-base-fedora: Fedora-based variant
+#
+
+FROM fedora:${FEDORA_TAG} AS kas-base-fedora
+
+ARG SOURCE_DATE_EPOCH
+ARG CACHE_SHARING=locked
+ARG FEDORA_TAG=40
+ENV FEDORA_BASE_IMAGE_TAG=${FEDORA_TAG}
+
+ARG TARGETPLATFORM
+ENV LANG=en_US.utf8
+
+# uv: fast, static Rust pip replacement. Pin the tag for reproducibility.
+COPY --from=ghcr.io/astral-sh/uv:0.11.8 /uv /usr/local/bin/uv
+
+RUN --mount=type=cache,target=/var/cache/dnf,sharing=${CACHE_SHARING} \
+    dnf install -y --setopt=install_weak_deps=False \
+        glibc-langpack-en \
+        file vim-enhanced less procps-ng tree tar bzip2 zstd pigz lz4 unzip tmux \
+        ncurses-devel which findutils shadow-utils util-linux \
+        iproute openssh-clients telnet curl rsync \
+        git git-lfs mercurial \
+        gnupg2 sudo socat bash-completion \
+        python3-pip python3-setuptools python3-wheel python3-pyyaml python3-distro \
+        python3-jsonschema python3-newt python3-colorlog python3-websockets \
+        python3-shtab python3-GitPython python3-gnupg python3-cairo && \
+    git config --system filter.lfs.clean 'git-lfs clean -- %f' && \
+    git config --system filter.lfs.smudge 'git-lfs smudge -- %f' && \
+    git config --system filter.lfs.process 'git-lfs filter-process' && \
+    git config --system filter.lfs.required true && \
+    dnf clean all
+
+# python3-kconfiglib is not packaged in Fedora; install via uv.
+RUN uv pip install --system --no-cache kconfiglib
+
+# gosu is not in Fedora repos. Pull the static binary from upstream releases.
+ARG GOSU_VERSION=1.17
+RUN set -eux; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+        x86_64) goarch=amd64;; \
+        aarch64) goarch=arm64;; \
+        *) echo "gosu: unsupported arch $arch"; exit 1;; \
+    esac; \
+    curl -fsSL "https://github.com/tianon/gosu/releases/download/${GOSU_VERSION}/gosu-${goarch}" \
+        -o /usr/local/bin/gosu; \
+    chmod +x /usr/local/bin/gosu; \
+    gosu --version; \
+    gosu nobody true
+
+RUN --mount=type=bind,target=/kas,rw \
+    uv pip install --system --no-cache \
+        --no-deps \
+        --no-build-isolation \
+        /kas && \
+    install -d /usr/local/share/bash-completion/completions/ && \
+    # Invoke shtab as `python3 -m shtab` (not the /usr/sbin/shtab script):
+    # Fedora's python3-shtab uses `#!/usr/bin/python3 -sP`, and the -P flag
+    # excludes /usr/local/lib/python3.x/site-packages (where uv installs) from
+    # sys.path, so shtab can't import kas. Running via `python3 -m` gets a
+    # default sys.path that sees /usr/local.
+    python3 -m shtab --shell=bash -u kas.kas.kas_get_argparser --error-unimportable --prog kas \
+        > /usr/local/share/bash-completion/completions/kas && \
+    rm -f /usr/local/bin/kas-container && \
+    install -m 0755 /kas/container-entrypoint / && \
+    kas --version
+
+RUN echo "builder ALL=NOPASSWD: ALL" > /etc/sudoers.d/builder-nopasswd && \
+    chmod 0440 /etc/sudoers.d/builder-nopasswd && \
+    echo "Defaults env_keep += \"ftp_proxy http_proxy https_proxy no_proxy\"" \
+    > /etc/sudoers.d/env_keep && chmod 0440 /etc/sudoers.d/env_keep && \
+    groupadd builder -g 30000 && \
+    useradd builder -u 30000 -g 30000 --create-home --home-dir /builder
+
+ENTRYPOINT ["/container-entrypoint"]
+
+#
+# kas-fedora: Yocto build environment on Fedora
+#
+
+FROM kas-base-fedora AS kas-fedora
+
+ARG SOURCE_DATE_EPOCH
+ARG CACHE_SHARING=locked
+ARG TARGETPLATFORM
+
+# Yocto official Fedora deps (per Yocto 5.0/walnascar reference manual,
+# https://docs.yoctoproject.org/dev/ref-manual/system-requirements.html#fedora-packages )
+RUN --mount=type=cache,target=/var/cache/dnf,sharing=${CACHE_SHARING} \
+    dnf install -y --setopt=install_weak_deps=False \
+        bzip2 ccache chrpath cpio cpp diffstat diffutils file findutils gawk \
+        gcc gcc-c++ gcc-gfortran git glibc-devel glibc-langpack-en gzip hostname libacl \
+        libstdc++-static \
+        make patch perl perl-Data-Dumper perl-File-Compare perl-File-Copy \
+        perl-FindBin perl-Text-ParseWords perl-Thread-Queue perl-bignum \
+        perl-locale python python3 python3-GitPython python3-jinja2 \
+        python3-pexpect python3-pip python3-websockets rpcgen socat tar \
+        texinfo unzip wget which xz zstd libxcrypt-compat \
+        SDL-devel mesa-libGL-devel pylint xterm python3-subunit && \
+    if [ "$(rpm -E %fedora)" -ge 42 ]; then \
+        dnf install -y --setopt=install_weak_deps=False util-linux-script; \
+    fi && \
+    if [ "$TARGETPLATFORM" = "linux/amd64" ]; then \
+        dnf install -y --setopt=install_weak_deps=False \
+            glibc-devel.i686 libstdc++-devel.i686; \
+    fi && \
+    dnf clean all
+
+USER builder

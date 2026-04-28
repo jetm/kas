@@ -142,9 +142,8 @@ overwritten using the ``env`` section of the config file.
 | ``no_proxy``             |                                                  |
 | (C,K,E)                  |                                                  |
 +--------------------------+--------------------------------------------------+
-| ``GIT_PROXY_COMMAND`` (E)| Set proxy for native git fetches. ``NO_PROXY``   |
-| ``NO_PROXY`` (C,K,E)     | is evaluated by OpenEmbedded's oe-git-proxy      |
-|                          | script.                                          |
+| ``GIT_PROXY_COMMAND`` (E)| Set proxy command for native git fetches.        |
+| ``NO_PROXY`` (C,K,E)     | ``NO_PROXY`` is evaluated by the proxy command.  |
 +--------------------------+--------------------------------------------------+
 | ``SHELL``                | The shell to start when using the ``shell``      |
 | (C,K,E)                  | plugin and in the bitbake environment.           |

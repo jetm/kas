@@ -73,12 +73,8 @@ RUN --mount=type=bind,target=/kas,rw \
         > /usr/local/share/bash-completion/completions/kas && \
     rm -rf $(pip3 cache dir) && \
     rm -f /usr/local/bin/kas-container && \
-    install -m 0755 /kas/contrib/oe-git-proxy /usr/bin/ && \
     install -m 0755 /kas/container-entrypoint / && \
     kas --version
-
-ENV GIT_PROXY_COMMAND="oe-git-proxy" \
-    NO_PROXY="*"
 
 RUN echo "builder ALL=NOPASSWD: ALL" > /etc/sudoers.d/builder-nopasswd && \
     chmod 660 /etc/sudoers.d/builder-nopasswd && \

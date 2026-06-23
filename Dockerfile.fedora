@@ -1,28 +1,25 @@
 #
 # kas - setup tool for bitbake based projects
 #
-# Fedora variant of the kas build container. Parameterized by
-# FEDORA_TAG so a single Dockerfile produces images for multiple
-# Fedora releases.
+# Fedora variant of the kas build container. Parameterized by FEDORA_TAG
+# so a single Dockerfile produces images for multiple Fedora releases.
+# It lives alongside the upstream Dockerfile (Debian).
 #
-# This file replaces the previous Dockerfile.fedora40 and
-# Dockerfile.fedora43 (which differed only in the FEDORA_TAG
-# default). It lives alongside the upstream Dockerfile (Ubuntu/Debian).
+# Prefer scripts/build-fedora-container.sh: it derives the kas version and
+# the default Fedora release from this file and (re)points
+# jetm/kas-build-env:latest at the image it builds.
 #
-# Default build (Fedora 40, also tagged :latest):
+#   scripts/build-fedora-container.sh            # latest stable (Fedora 44)
+#   scripts/build-fedora-container.sh -f 43      # a specific release, e.g.
+#                                                # for cross-release comparison
+#
+# Equivalent manual build (Fedora 44, also tagged :latest):
 #   docker build -f Dockerfile.fedora --target kas-fedora \
-#       -t jetm/kas-build-env:5.3-f40 .
-#   docker tag jetm/kas-build-env:5.3-f40 jetm/kas-build-env:latest
-#
-# Comparison build (Fedora 43, used for debugging Yocto/bitbake
-# behavior across Python/glibc/perl/util-linux deltas; e.g.
-# confirming the bitbake parser-hang on Ubuntu Noble's CPython 3.12
-# is bpo-1596321 and does not reproduce on a newer Fedora Python):
-#   docker build -f Dockerfile.fedora --build-arg FEDORA_TAG=43 \
-#       --target kas-fedora -t jetm/kas-build-env:5.3-f43 .
+#       --build-arg FEDORA_TAG=44 -t jetm/kas-build-env:5.3-f44 .
+#   docker tag jetm/kas-build-env:5.3-f44 jetm/kas-build-env:latest
 #
 
-ARG FEDORA_TAG=40
+ARG FEDORA_TAG=44
 
 #
 # kas-base-fedora: Fedora-based variant
@@ -32,7 +29,7 @@ FROM fedora:${FEDORA_TAG} AS kas-base-fedora
 
 ARG SOURCE_DATE_EPOCH
 ARG CACHE_SHARING=locked
-ARG FEDORA_TAG=40
+ARG FEDORA_TAG=44
 ENV FEDORA_BASE_IMAGE_TAG=${FEDORA_TAG}
 
 ARG TARGETPLATFORM
